@@ -1,0 +1,20 @@
+# UIA-v2 library (users download separately)
+lib/UIA.ahk
+
+# Old script (renamed to Clackey.ahk)
+Mouseless.ahk
+
+# Internal documentation
+docs/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.cursor/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
