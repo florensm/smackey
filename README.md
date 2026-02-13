@@ -52,18 +52,16 @@ No text, names, values, or other content is read or stored. Nothing is sent over
 ### Requirements
 
 - [AutoHotkey v2.0+](https://www.autohotkey.com/)
-- [Descolada UIA-v2 library](https://github.com/Descolada/UIA-v2)
+- **UIA.ahk** — download from [Descolada/UIA-v2](https://github.com/Descolada/UIA-v2) and place in the `lib/` folder (not included in this repo)
 
 ### Steps
 
 1. **Install AutoHotkey v2** from [autohotkey.com](https://www.autohotkey.com/)
-2. **Download UIA-v2**:
-   - Go to [github.com/Descolada/UIA-v2](https://github.com/Descolada/UIA-v2)
+2. **Download UIA.ahk** from the [UIA-v2 GitHub](https://github.com/Descolada/UIA-v2):
    - Click "Code" → "Download ZIP"
-   - Extract the ZIP
-3. **Copy `UIA.ahk`** to the `lib/` folder of this project
-   - The file is in the `Lib` folder of the UIA-v2 download
-4. **Run** `Clackey.ahk` (double-click)
+   - Extract the ZIP and find `UIA.ahk` in the `Lib` folder
+   - Copy `UIA.ahk` into this project's `lib/` folder
+3. **Run** `Clackey.ahk` (double-click)
 
 ### Folder structure
 
