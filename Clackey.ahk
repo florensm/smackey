@@ -2,19 +2,23 @@
 ;  Clackey - Vimium-style keyboard navigation for Windows
 ; ==========================================================
 ;
-;  SHORTCUTS (always available):
-;    Alt+f     → Show hint labels, type letters to click
-;    Alt+j / k → Scroll down / up
-;    Alt+d / u → Half page down / up
+;  SHORTCUTS (configurable in settings.ini):
+;    Alt+f       → Show hint labels, type letters to click
+;    Ctrl+j / k  → Scroll down / up (default: Ctrl for GlazeWM compatibility)
+;    Ctrl+g      → Half page down
+;    Ctrl+Shift+g → Half page up
 ;
 ;  ALWAYS ACTIVE:
 ;    F3        → UIA Inspector (element info under cursor)
 ;    ScrollLock → Pause/resume all Clackey hotkeys
 ;
 ;  PRIVACY:
-;    The scanner NEVER reads text, names, or values.
-;    Only position (x,y,w,h) and type ("Button", "ComboBox").
-;    The Inspector (F3) reads names only when YOU trigger it.
+;    Scanner (PrivacyMode=1): reads ONLY position + type during
+;    bulk scan. No text, names, or values.
+;    Safety check (SafetyCheck=1): reads ONE element's name at
+;    click time to detect destructive actions. Discarded immediately.
+;    Set SafetyCheck=0 for zero name reads.
+;    Inspector (F3): reads names only when YOU trigger it.
 ;
 ;  Requires: AutoHotkey v2.0+, Descolada UIA-v2 library
 ; ==========================================================
@@ -32,20 +36,23 @@
 ; ----------------------------------------------------------
 class Config {
     ; --- Hotkeys ---
+    static Modifier       := "Ctrl"     ; Alt or Ctrl for scroll (Ctrl = GlazeWM compatible)
     static TriggerKey     := "f"         ; Hint mode (Alt+f)
     static InspectKey     := "F3"        ; Inspector (always active)
-    static ScrollDownKey  := "j"         ; Scroll down (Alt+j)
-    static ScrollUpKey    := "k"         ; Scroll up (Alt+k)
-    static HalfDownKey    := "d"         ; Half page down (Alt+d)
-    static HalfUpKey      := "u"         ; Half page up (Alt+u)
+    static ScrollDownKey  := "j"         ; Scroll down
+    static ScrollUpKey    := "k"         ; Scroll up
+    static HalfDownKey    := "g"         ; Half page down (Ctrl+g)
+    static HalfUpKey      := "+g"        ; Half page up (Ctrl+Shift+g)
 
     ; --- Scroll settings ---
-    static ScrollLines    := 3           ; Lines per Alt+j/k
-    static HalfPageLines  := 10          ; Lines per Alt+d/u
+    static ScrollLines    := 2           ; Lines per scroll (1=smooth, 3+=faster)
+    static HalfPageLines  := 8           ; Lines per half page
+    static SmoothScroll   := true        ; Multiple small ticks for smoother feel
 
     ; --- Hint settings ---
     static HintChars      := "asdfghjkl" ; Home row keys
-    static PrivacyMode    := true        ; NEVER read text/names
+    static PrivacyMode    := true        ; Scanner: don't read text/names during bulk scan
+    static SafetyCheck    := true        ; Confirm destructive actions (reads 1 name at click time)
     static MaxElements    := 200         ; Max number of elements
 
     ; --- Appearance ---
@@ -70,20 +77,25 @@ class Config {
             return
 
         ; Hotkeys
-        this.TriggerKey    := IniRead(f, "General", "TriggerKey", this.TriggerKey)
-        this.InspectKey    := IniRead(f, "General", "InspectKey", this.InspectKey)
+        this.Modifier      := IniRead(f, "General", "Modifier", this.Modifier)
+        if !InStr("ctrl,alt", StrLower(this.Modifier))
+            this.Modifier := "Ctrl"
+        this.TriggerKey   := IniRead(f, "General", "TriggerKey", this.TriggerKey)
+        this.InspectKey   := IniRead(f, "General", "InspectKey", this.InspectKey)
         this.ScrollDownKey := IniRead(f, "Navigation", "ScrollDown", this.ScrollDownKey)
         this.ScrollUpKey   := IniRead(f, "Navigation", "ScrollUp", this.ScrollUpKey)
         this.HalfDownKey   := IniRead(f, "Navigation", "HalfPageDown", this.HalfDownKey)
         this.HalfUpKey     := IniRead(f, "Navigation", "HalfPageUp", this.HalfUpKey)
 
         ; Scroll
-        this.ScrollLines   := Integer(IniRead(f, "Navigation", "ScrollLines", "3"))
-        this.HalfPageLines := Integer(IniRead(f, "Navigation", "HalfPageLines", "10"))
+        this.ScrollLines   := Integer(IniRead(f, "Navigation", "ScrollLines", "2"))
+        this.HalfPageLines := Integer(IniRead(f, "Navigation", "HalfPageLines", "8"))
+        this.SmoothScroll  := !!Integer(IniRead(f, "Navigation", "SmoothScroll", "1"))
 
         ; Hints
         this.HintChars   := IniRead(f, "General", "HintChars", this.HintChars)
         this.PrivacyMode := !!Integer(IniRead(f, "General", "PrivacyMode", "1"))
+        this.SafetyCheck := !!Integer(IniRead(f, "General", "SafetyCheck", "1"))
         this.MaxElements := Integer(IniRead(f, "General", "MaxElements", "200"))
         this.ShowTiming  := !!Integer(IniRead(f, "General", "ShowTiming", "0"))
         this.ScanTypes   := IniRead(f, "General", "ScanTypes", this.ScanTypes)
@@ -104,13 +116,14 @@ Config.Load()
 global g_HintActive := false
 global g_Paused := false
 
-; --- Alt+key shortcuts ---
+; --- Shortcuts: Alt for hints, Modifier (Ctrl/Alt) for scroll ---
+modKey := (StrLower(Config.Modifier) = "ctrl") ? "^" : "!"
 HotIf(ActiveCheck)
 Hotkey("!" Config.TriggerKey, (*) => ActivateHints())
-Hotkey("!" Config.ScrollDownKey, (*) => ScrollDown())
-Hotkey("!" Config.ScrollUpKey, (*) => ScrollUp())
-Hotkey("!" Config.HalfDownKey, (*) => ScrollHalfDown())
-Hotkey("!" Config.HalfUpKey, (*) => ScrollHalfUp())
+Hotkey(modKey Config.ScrollDownKey, (*) => ScrollDown())
+Hotkey(modKey Config.ScrollUpKey, (*) => ScrollUp())
+Hotkey(modKey Config.HalfDownKey, (*) => ScrollHalfDown())
+Hotkey(modKey Config.HalfUpKey, (*) => ScrollHalfUp())
 HotIf()
 
 ; --- Always active ---
@@ -123,6 +136,27 @@ A_TrayMenu.Delete()
 A_TrayMenu.Add("Clackey", (*) => "")
 A_TrayMenu.Disable("Clackey")
 A_TrayMenu.Add()
+
+; Shortcuts submenu
+modName := (StrLower(Config.Modifier) = "ctrl") ? "Ctrl" : "Alt"
+halfDownDisp := RegExReplace(Config.HalfDownKey, "^\+", "Shift+")
+halfUpDisp := RegExReplace(Config.HalfUpKey, "^\+", "Shift+")
+shortcutsMenu := Menu()
+shortcutsMenu.Add("Alt+" Config.TriggerKey "  →  Hint mode", (*) => "")
+shortcutsMenu.Disable("Alt+" Config.TriggerKey "  →  Hint mode")
+shortcutsMenu.Add(modName "+" Config.ScrollDownKey " / " modName "+" Config.ScrollUpKey "  →  Scroll", (*) => "")
+shortcutsMenu.Disable(modName "+" Config.ScrollDownKey " / " modName "+" Config.ScrollUpKey "  →  Scroll")
+shortcutsMenu.Add(modName "+" halfDownDisp " / " modName "+" halfUpDisp "  →  Half page", (*) => "")
+shortcutsMenu.Disable(modName "+" halfDownDisp " / " modName "+" halfUpDisp "  →  Half page")
+shortcutsMenu.Add()
+shortcutsMenu.Add(Config.InspectKey "  →  Inspector", (*) => InspectElement())
+shortcutsMenu.Add("ScrollLock  →  Pause", (*) => TogglePause())
+shortcutsMenu.Add()
+shortcutsMenu.Add(". , /  →  Right / Double / Middle click (prefix before hint)", (*) => "")
+shortcutsMenu.Disable(". , /  →  Right / Double / Middle click (prefix before hint)")
+A_TrayMenu.Add("Shortcuts", shortcutsMenu)
+A_TrayMenu.Add()
+
 A_TrayMenu.Add("Inspector (" Config.InspectKey ")", (*) => InspectElement())
 A_TrayMenu.Add("Pause (ScrollLock)", (*) => TogglePause())
 A_TrayMenu.Add()
@@ -131,10 +165,16 @@ A_TrayMenu.Add("Reload", (*) => Reload())
 A_TrayMenu.Add()
 A_TrayMenu.Add("Exit", (*) => ExitApp())
 
+; Tray tooltip (hover over icon)
+A_IconTip := "Clackey`n"
+    . "Alt+" Config.TriggerKey " = Hints | "
+    . modName "+" Config.ScrollDownKey "/" Config.ScrollUpKey " = Scroll | "
+    . modName "+" halfDownDisp "/" halfUpDisp " = Half page`n"
+    . Config.InspectKey " = Inspector | ScrollLock = Pause"
 ToolTip("Clackey active`n"
     . "Alt+" Config.TriggerKey " = hints | "
-    . "Alt+" Config.ScrollDownKey "/" Config.ScrollUpKey " = scroll | "
-    . "Alt+" Config.HalfDownKey "/" Config.HalfUpKey " = half page`n"
+    . modName "+" Config.ScrollDownKey "/" Config.ScrollUpKey " = scroll | "
+    . modName "+" halfDownDisp " / " modName "+" halfUpDisp " = half page`n"
     . Config.InspectKey " = inspect | ScrollLock = pause")
 SetTimer(() => ToolTip(), -4000)
 
@@ -158,24 +198,39 @@ ActiveCheck(ThisHotkey) {
 ; Navigation functions
 ; ----------------------------------------------------------
 
-/** Scroll down (Alt+j) */
+/** Scroll down */
 ScrollDown() {
-    Send("{WheelDown " Config.ScrollLines "}")
+    DoScroll("Down", Config.ScrollLines)
 }
 
-/** Scroll up (Alt+k) */
+/** Scroll up */
 ScrollUp() {
-    Send("{WheelUp " Config.ScrollLines "}")
+    DoScroll("Up", Config.ScrollLines)
 }
 
-/** Half page down (Alt+d) */
+/** Half page down */
 ScrollHalfDown() {
-    Send("{WheelDown " Config.HalfPageLines "}")
+    DoScroll("Down", Config.HalfPageLines)
 }
 
-/** Half page up (Alt+u) */
+/** Half page up */
 ScrollHalfUp() {
-    Send("{WheelUp " Config.HalfPageLines "}")
+    DoScroll("Up", Config.HalfPageLines)
+}
+
+/**
+ * DoScroll: smooth (multiple small ticks) or single batch.
+ * SmoothScroll=1: sends ticks one-by-one with 12ms delay for fluid feel.
+ */
+DoScroll(direction, lines) {
+    if Config.SmoothScroll && lines > 1 {
+        Loop lines {
+            Send("{Wheel" direction " 1}")
+            Sleep(12)
+        }
+    } else {
+        Send("{Wheel" direction " " lines "}")
+    }
 }
 
 /**
@@ -398,6 +453,12 @@ OnHintKeyDown(state, hints, overlay, ih, vk, sc) {
  * Clicks the matched element. Returns the action type:
  *   "expand"  → dropdown/menu opened (triggers re-scan)
  *   "click"   → normal click
+ *   "cancel"  → user cancelled destructive action confirmation
+ *
+ * SAFETY: Before clicking, checks if element name contains destructive
+ * keywords (delete, remove, etc.). If found, shows a confirmation dialog.
+ * The name is read temporarily and immediately cleared from memory.
+ * Nothing is logged or stored.
  *
  * @param {Object} hint      - The matched hint object
  * @param {String} clickType - "left", "right", "double", or "middle"
@@ -405,6 +466,10 @@ OnHintKeyDown(state, hints, overlay, ih, vk, sc) {
 ExecuteHint(hint, clickType := "left") {
     el := hint.element
     ct := hint.ctrlType
+
+    ; === Safety check: destructive action confirmation ===
+    if Config.SafetyCheck && !ConfirmIfDestructive(el)
+        return "cancel"
 
     ; === Non-standard click types: direct mouse click ===
     ; Right click, double click, and middle click bypass UIA patterns
@@ -591,10 +656,74 @@ InspectElement() {
 }
 
 ; ----------------------------------------------------------
+; Destructive action safety
+; ----------------------------------------------------------
+
+/**
+ * Checks if an element's name contains destructive keywords.
+ * If so, shows a confirmation dialog before proceeding.
+ *
+ * PRIVACY: The element name is read into a local variable,
+ * checked against keywords, then the variable goes out of scope.
+ * Nothing is logged, stored, or sent anywhere.
+ *
+ * @param {Object} el - UIA element to check
+ * @returns {Boolean} true = proceed with click, false = cancelled
+ */
+ConfirmIfDestructive(el) {
+    static dangerWords := [
+        "delete", "remove", "erase", "destroy", "discard",
+        "verwijderen", "wissen", "permanent",
+        "format", "reset", "clear all", "empty trash",
+        "uninstall", "drop"
+    ]
+
+    elName := ""
+    try elName := el.Name
+    if elName = ""
+        return true
+
+    nameLower := StrLower(elName)
+    isDangerous := false
+
+    for word in dangerWords {
+        if InStr(nameLower, word) {
+            isDangerous := true
+            break
+        }
+    }
+
+    if !isDangerous {
+        elName := ""
+        nameLower := ""
+        return true
+    }
+
+    result := MsgBox(
+        "Clackey detected a potentially destructive action:`n`n"
+        . "  → " elName "`n`n"
+        . "Are you sure you want to click this element?",
+        "Clackey - Confirm action",
+        "YesNo Icon! Default2"
+    )
+
+    elName := ""
+    nameLower := ""
+
+    return (result = "Yes")
+}
+
+; ----------------------------------------------------------
 ; Utility functions
 ; ----------------------------------------------------------
 
+global _statusTimer := ObjBindMethod({}, "Call")
+
 ShowStatus(msg, duration := 2000) {
+    global _statusTimer
+    SetTimer(_statusTimer, 0)
+    _statusTimer := () => ToolTip()
     ToolTip(msg)
-    SetTimer(() => ToolTip(), -duration)
+    if duration > 0
+        SetTimer(_statusTimer, -duration)
 }
